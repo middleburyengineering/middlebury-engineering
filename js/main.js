@@ -238,7 +238,7 @@ if (bridgeMounts.length) {
   });
   loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
     .then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js'))
-    .then(() => new THREE.GLTFLoader().loadAsync('images/bridge.glb'))
+    .then(() => new THREE.GLTFLoader().loadAsync('images/bridge.glb?v=2'))
     .then((gltf) => bridgeMounts.forEach((mount) => mountBridge(mount, gltf.scene.clone(true))))
     .catch(() => { /* keep the static fallback */ });
 }
@@ -266,7 +266,8 @@ function mountBridge(mount, model) {
   const edgeMat = new THREE.LineBasicMaterial({ color: mode === 'float' ? 0x2a1a0e : 0x3a2414, transparent: true, opacity: 0.55 });
   model.traverse((o) => {
     if (!o.isMesh) return;
-    o.material = ply;
+    // Wood parts get the shared plywood look; steel hardware and the load plate keep their own materials
+    if (!o.material || o.material.name === 'plywood' || !o.material.name) o.material = ply;
     o.add(new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 25), edgeMat));
   });
 
@@ -283,7 +284,7 @@ function mountBridge(mount, model) {
     const w = mount.clientWidth, h = mount.clientHeight || w * 0.75;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    camera.position.set(0, radius * 0.55, radius * (mode === 'float' ? 4.4 : 4.8) / Math.min(camera.aspect, 1.4));
+    camera.position.set(0, radius * 0.55, radius * (mode === 'float' ? 4.4 : 4.0) / Math.min(camera.aspect, 1.4));
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
   }
