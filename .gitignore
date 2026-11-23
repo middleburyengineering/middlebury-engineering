@@ -19,3 +19,6 @@
 /*.stp
 /*.STEP
 /*.STP
+
+# Simulation exports (the site uses the converted images/bridge-fea.bin)
+/*.zip

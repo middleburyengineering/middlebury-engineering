@@ -53,7 +53,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=18">
+  <link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
   <header class="site-header">
@@ -95,11 +95,29 @@
         <h1>Bridge Building Competition</h1>
         <p>By the end of the semester, everyone will be able to design and fabricate a custom wooden truss bridge, then we load them until they break.</p>
         </div>
-        <div class="truss-demo" data-truss>
-          <div class="truss-hint">Live truss &middot; move to load it</div>
-          <svg viewBox="0 20 640 240" role="img" aria-label="Interactive Warren truss showing tension and compression as a load moves across it"></svg>
-          <div class="truss-legend"><span><i style="background:#5aa9ff"></i>Tension</span><span><i style="background:#ff6a2b"></i>Compression</span><span>Line width = force</span></div>
-          <div class="truss-readout" aria-live="polite"></div>
+        <div class="fea-demo" data-fea>
+          <div class="fea-head">
+            <span class="fea-tag">Live FEA &middot; our SimScale results</span>
+            <span class="fea-hint">Drag to orbit &middot; hover for stress</span>
+          </div>
+          <div class="fea-stage">
+            <img class="fea-fallback" src="images/bridge-fea.jpg" alt="Finite element analysis of the MES bridge showing von Mises stress">
+            <div class="fea-tip" hidden></div>
+          </div>
+          <div class="fea-controls">
+            <button type="button" class="fea-play" data-play aria-label="Play load animation">&#9654;</button>
+            <label class="fea-slider">
+              <span>Load</span>
+              <input type="range" min="0" max="100" value="0" step="1" data-load aria-label="Load as a percent of the simulated load">
+              <output data-load-out>0%</output>
+            </label>
+            <button type="button" class="fea-mode" data-mode aria-pressed="false">Plywood view</button>
+          </div>
+          <div class="fea-legend">
+            <span>0</span><i></i><span>28.3 MPa</span>
+          </div>
+          <div class="fea-readout" aria-live="polite">Peak stress 0.0 MPa &middot; max deflection 0.000 mm</div>
+          <div class="fea-note">Von Mises stress from SimScale. Deflection drawn &times;20 so you can see it.</div>
         </div>
       </div>
     </section>
@@ -238,6 +256,6 @@
       </div>
     </div>
   </footer>
-  <script src="js/main.js?v=11"></script>
+  <script src="js/main.js?v=15"></script>
 </body>
 </html>

@@ -87,157 +87,29 @@ if (!reduceMotion && 'IntersectionObserver' in window) {
   });
 }
 
-// Live truss: a Warren truss solved by the method of joints as a load moves across the deck.
-// Members are coloured by tension/compression and drawn thicker the more force they carry.
-document.querySelectorAll('[data-truss]').forEach((box) => {
-  const svg = box.querySelector('svg');
-  const readout = box.querySelector('.truss-readout');
-  const NS = 'http://www.w3.org/2000/svg';
-  const PANELS = 6, X0 = 40, SPAN = 560, YB = 200, H = 130, LOAD = 100; // LOAD in newtons
-  const L = SPAN / PANELS;
-
-  // Joints: bottom chord B0..B6, top chord T0..T5 (Warren, top joints over panel midpoints)
-  const nodes = [];
-  for (let i = 0; i <= PANELS; i++) nodes.push({ x: X0 + i * L, y: YB, bottom: true });
-  for (let i = 0; i < PANELS; i++) nodes.push({ x: X0 + (i + 0.5) * L, y: YB - H, bottom: false });
-  const B = (i) => i, T = (i) => PANELS + 1 + i;
-
-  const members = [];
-  for (let i = 0; i < PANELS; i++) members.push([B(i), B(i + 1), 'bottom chord']);
-  for (let i = 0; i < PANELS - 1; i++) members.push([T(i), T(i + 1), 'top chord']);
-  for (let i = 0; i < PANELS; i++) { members.push([B(i), T(i), 'diagonal']); members.push([T(i), B(i + 1), 'diagonal']); }
-
-  // Unknowns: one force per member + reactions (pin at B0: Rx, Ry; roller at B6: Ry)
-  const nUnknown = members.length + 3;
-  const nEq = nodes.length * 2;
-
-  function solve(loadX) {
-    const A = Array.from({ length: nEq }, () => new Float64Array(nUnknown));
-    const b = new Float64Array(nEq);
-    members.forEach(([i, j], m) => {
-      const dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y, len = Math.hypot(dx, dy);
-      const ux = dx / len, uy = dy / len;
-      A[2 * i][m] += ux; A[2 * i + 1][m] += uy;     // tension pulls joint i toward j
-      A[2 * j][m] -= ux; A[2 * j + 1][m] -= uy;
-    });
-    const r = members.length;
-    A[2 * B(0)][r] = 1; A[2 * B(0) + 1][r + 1] = 1; A[2 * B(PANELS) + 1][r + 2] = 1;
-    // Load shared between the two deck joints either side of it (screen y points down, so +LOAD)
-    const p = Math.min(Math.max((loadX - X0) / L, 0), PANELS - 1e-6);
-    const k = Math.floor(p), t = p - k;
-    b[2 * B(k) + 1] -= LOAD * (1 - t);
-    b[2 * B(k + 1) + 1] -= LOAD * t;
-    // Gaussian elimination with partial pivoting
-    for (let c = 0; c < nUnknown; c++) {
-      let piv = c;
-      for (let rr = c + 1; rr < nEq; rr++) if (Math.abs(A[rr][c]) > Math.abs(A[piv][c])) piv = rr;
-      [A[c], A[piv]] = [A[piv], A[c]]; [b[c], b[piv]] = [b[piv], b[c]];
-      for (let rr = c + 1; rr < nEq; rr++) {
-        const f = A[rr][c] / A[c][c];
-        if (!f) continue;
-        for (let cc = c; cc < nUnknown; cc++) A[rr][cc] -= f * A[c][cc];
-        b[rr] -= f * b[c];
-      }
-    }
-    const x = new Float64Array(nUnknown);
-    for (let c = nUnknown - 1; c >= 0; c--) {
-      let s = b[c];
-      for (let cc = c + 1; cc < nUnknown; cc++) s -= A[c][cc] * x[cc];
-      x[c] = s / A[c][c];
-    }
-    return x; // member forces: + tension, - compression
-  }
-
-  // Static scenery: supports and ground
-  const el = (tag, attrs, parent = svg) => {
-    const e = document.createElementNS(NS, tag);
-    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
-    parent.appendChild(e);
-    return e;
-  };
-  el('path', { d: `M${X0 - 14} ${YB + 26} l14 -24 l14 24 z`, fill: 'none', stroke: '#8fa3bb', 'stroke-width': 2 });
-  el('circle', { cx: X0 + SPAN, cy: YB + 12, r: 9, fill: 'none', stroke: '#8fa3bb', 'stroke-width': 2 });
-  el('line', { x1: X0 - 30, y1: YB + 28, x2: X0 + 22, y2: YB + 28, stroke: '#8fa3bb', 'stroke-width': 2 });
-  el('line', { x1: X0 + SPAN - 24, y1: YB + 28, x2: X0 + SPAN + 30, y2: YB + 28, stroke: '#8fa3bb', 'stroke-width': 2 });
-  const memberEls = members.map(() => el('line', { 'stroke-linecap': 'round' }));
-  const nodeEls = nodes.map(() => el('circle', { r: 4.5, fill: '#0d1b2a', stroke: '#e6edf6', 'stroke-width': 2 }));
-  const arrow = el('g', {});
-  el('line', { x1: 0, y1: -(H + 12), x2: 0, y2: -12, stroke: '#ffffff', 'stroke-width': 3, 'stroke-dasharray': '6 5' }, arrow);
-  el('path', { d: 'M-9 -16 L0 0 L9 -16 Z', fill: '#ffffff' }, arrow);
-  const label = el('text', { x: 0, y: -(H + 22), 'text-anchor': 'middle', fill: '#ffffff', 'font-family': 'IBM Plex Mono, monospace', 'font-size': 14 }, arrow);
-  label.textContent = `P = ${LOAD} N`;
-
-  let target = X0 + SPAN / 2, current = target, auto = !reduceMotion, autoT = 0, idleTimer;
-
-  function draw(loadX) {
-    const f = solve(loadX);
-    let max = 1e-9;
-    for (let m = 0; m < members.length; m++) max = Math.max(max, Math.abs(f[m]));
-    // Exaggerated sag so the deck visibly bends under the load (simply supported beam shape)
-    const a = loadX - X0, bb = SPAN - a;
-    const sag = (x) => {
-      const u = x - X0;
-      const d = u <= a ? bb * u * (SPAN * SPAN - bb * bb - u * u) : a * (SPAN - u) * (SPAN * SPAN - a * a - (SPAN - u) * (SPAN - u));
-      return (d / (SPAN * SPAN * SPAN * SPAN)) * 140;
-    };
-    const pos = nodes.map((n) => ({ x: n.x, y: n.y + sag(n.x) }));
-    members.forEach(([i, j], m) => {
-      const v = f[m], mag = Math.abs(v) / max;
-      const e = memberEls[m];
-      e.setAttribute('x1', pos[i].x); e.setAttribute('y1', pos[i].y);
-      e.setAttribute('x2', pos[j].x); e.setAttribute('y2', pos[j].y);
-      e.setAttribute('stroke-width', (2 + mag * 11).toFixed(2));
-      e.setAttribute('stroke', mag < 0.03 ? '#5b6b80' : v > 0 ? '#5aa9ff' : '#ff6a2b');
-    });
-    nodeEls.forEach((e, i) => { e.setAttribute('cx', pos[i].x); e.setAttribute('cy', pos[i].y); });
-    arrow.setAttribute('transform', `translate(${loadX} ${YB + sag(loadX) - 6})`);
-
-    let maxT = 0, maxC = 0, tName = '', cName = '';
-    members.forEach((mm, m) => {
-      if (f[m] > maxT) { maxT = f[m]; tName = mm[2]; }
-      if (-f[m] > maxC) { maxC = -f[m]; cName = mm[2]; }
-    });
-    if (readout) readout.textContent = `Max tension ${maxT.toFixed(0)} N (${tName}) · max compression ${maxC.toFixed(0)} N (${cName})`;
-  }
-
-  function toSvgX(clientX) {
-    const pt = svg.createSVGPoint(); pt.x = clientX; pt.y = 0;
-    return pt.matrixTransform(svg.getScreenCTM().inverse()).x;
-  }
-  box.addEventListener('pointermove', (e) => {
-    auto = false; clearTimeout(idleTimer);
-    target = Math.min(Math.max(toSvgX(e.clientX), X0 + 4), X0 + SPAN - 4);
-  });
-  box.addEventListener('pointerleave', () => {
-    clearTimeout(idleTimer);
-    if (!reduceMotion) idleTimer = setTimeout(() => { auto = true; }, 2500);
-  });
-
-  let last = performance.now();
-  function frame(now) {
-    const dt = Math.min((now - last) / 1000, 0.05); last = now;
-    if (auto) { autoT += dt; target = X0 + SPAN / 2 + Math.sin(autoT * 0.6) * SPAN * 0.42; }
-    current += (target - current) * Math.min(dt * 8, 1);
-    draw(current);
-    requestAnimationFrame(frame);
-  }
-  draw(current);
-  if (!reduceMotion) requestAnimationFrame(frame);
-  else box.addEventListener('pointermove', () => draw(target));
-});
-
 // 3D bridge: the club's Onshape model (images/bridge.glb), loaded only on pages that show it.
 //   data-bridge3d="float"  turns and drifts as the page scrolls, leaning toward the cursor
 //   data-bridge3d="orbit"  drag to spin, slow auto-rotation when idle
-const bridgeMounts = document.querySelectorAll('[data-bridge3d]');
-if (bridgeMounts.length) {
+// three.js is only loaded on pages that show a 3D model
+let threePromise;
+function loadThree() {
   const loadScript = (src) => new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = src; s.onload = resolve; s.onerror = reject;
     document.head.appendChild(s);
   });
-  loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
-    .then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js'))
+  threePromise = threePromise || loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+  return threePromise;
+}
+
+const bridgeMounts = document.querySelectorAll('[data-bridge3d]');
+if (bridgeMounts.length) {
+  loadThree()
+    .then(() => loadThree.gltf = loadThree.gltf || new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
+      s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+    }))
     .then(() => new THREE.GLTFLoader().loadAsync('images/bridge.glb?v=2'))
     .then((gltf) => bridgeMounts.forEach((mount) => mountBridge(mount, gltf.scene.clone(true))))
     .catch(() => { /* keep the static fallback */ });
@@ -337,6 +209,213 @@ function mountBridge(mount, model) {
     curY += (posY - curY) * Math.min(dt * 6, 1);
     pivot.rotation.set(curRotX, curRotY, 0);
     pivot.position.y = curY;
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(frame);
+}
+
+// Live FEA viewer: the club's SimScale results (images/bridge-fea.bin, built from the exported VTU files).
+// Load slider scales the solver's displacement and von Mises stress (linear analysis), hover reads stress,
+// drag orbits. File layout is documented in the converter: header, i16 positions, i16 displacements,
+// u16 von Mises, u32 triangle indices.
+const feaMount = document.querySelector('[data-fea]');
+if (feaMount) {
+  Promise.all([loadThree(), fetch('images/bridge-fea.bin?v=1').then((r) => {
+    if (!r.ok) throw new Error('fea data');
+    return r.arrayBuffer();
+  })]).then(([, buf]) => mountFEA(feaMount, buf)).catch(() => { /* keep the screenshot fallback */ });
+}
+
+function mountFEA(box, buf) {
+  const stage = box.querySelector('.fea-stage');
+  const tip = box.querySelector('.fea-tip');
+  const slider = box.querySelector('[data-load]');
+  const sliderOut = box.querySelector('[data-load-out]');
+  const playBtn = box.querySelector('[data-play]');
+  const modeBtn = box.querySelector('[data-mode]');
+  const readout = box.querySelector('.fea-readout');
+  const EXAGGERATE = 20;
+  if (window.matchMedia('(hover: none)').matches) box.querySelector('.fea-hint').textContent = 'Drag to orbit · tap for stress';
+
+  // ---- decode the binary ----
+  const dv = new DataView(buf);
+  const nv = dv.getUint32(8, true), nt = dv.getUint32(12, true);
+  const f = (o) => dv.getFloat32(o, true);
+  const bmin = [f(16), f(20), f(24)], bmax = [f(28), f(32), f(36)];
+  const dmax = f(40), vmax = f(44);
+  let off = 48;
+  const qpos = new Int16Array(buf, off, nv * 3); off += nv * 6;
+  const qdisp = new Int16Array(buf, off, nv * 3); off += nv * 6;
+  const qvm = new Uint16Array(buf, off, nv); off += nv * 2;
+  const idx = new Uint32Array(buf.slice(off, off + nt * 12)); // copied: the index block isn't 4-byte aligned
+
+  const base = new Float32Array(nv * 3), disp = new Float32Array(nv * 3), vm = new Float32Array(nv);
+  for (let i = 0; i < nv * 3; i++) {
+    const k = i % 3;
+    base[i] = (bmin[k] + ((qpos[i] + 32767) / 65534) * (bmax[k] - bmin[k])) * 1000; // metres -> mm
+    disp[i] = (qdisp[i] / 32767) * dmax * 1000;
+  }
+  for (let i = 0; i < nv; i++) vm[i] = (qvm[i] / 65535) * vmax / 1e6; // Pa -> MPa
+  const vmMaxMPa = vmax / 1e6;
+
+  // ---- scene ----
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  stage.insertBefore(renderer.domElement, tip); // linear output keeps the stress colours as vivid as SimScale's
+  box.classList.add('live');
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 1, 5000);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 0.75));
+  const key = new THREE.DirectionalLight(0xffffff, 0.55); key.position.set(200, 400, 300); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.2); fill.position.set(-300, 100, -200); scene.add(fill);
+
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(base);
+  const col = new Float32Array(nv * 3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  const centre = geo.boundingBox.getCenter(new THREE.Vector3());
+  const radius = geo.boundingBox.getSize(new THREE.Vector3()).length() / 2;
+
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(centre).multiplyScalar(-1);
+  const model = new THREE.Group();
+  model.add(mesh);
+  model.rotation.x = -Math.PI / 2; // CAD is Z-up
+  const pivot = new THREE.Group();
+  pivot.add(model);
+  scene.add(pivot);
+
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.012, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  marker.visible = false;
+  model.add(marker);
+
+  // SimScale-style rainbow: blue -> cyan -> green -> yellow -> red
+  const STOPS = [[0, [0.05, 0.1, 0.85]], [0.25, [0.1, 0.75, 1]], [0.5, [0.3, 0.9, 0.3]], [0.75, [1, 0.88, 0.1]], [1, [0.9, 0.12, 0.1]]];
+  const WOOD = [0.72, 0.5, 0.32];
+  function cmap(t, out, o) {
+    t = Math.min(Math.max(t, 0), 1);
+    for (let s = 1; s < STOPS.length; s++) {
+      if (t <= STOPS[s][0]) {
+        const [t0, c0] = STOPS[s - 1], [t1, c1] = STOPS[s], u = (t - t0) / (t1 - t0);
+        out[o] = c0[0] + (c1[0] - c0[0]) * u; out[o + 1] = c0[1] + (c1[1] - c0[1]) * u; out[o + 2] = c0[2] + (c1[2] - c0[2]) * u;
+        return;
+      }
+    }
+  }
+
+  let load = 0, stressMode = true;
+  function applyLoad() {
+    for (let i = 0; i < nv * 3; i++) pos[i] = base[i] + disp[i] * load * EXAGGERATE;
+    for (let i = 0; i < nv; i++) {
+      if (stressMode) cmap((vm[i] * load) / vmMaxMPa, col, i * 3);
+      else { col[i * 3] = WOOD[0]; col[i * 3 + 1] = WOOD[1]; col[i * 3 + 2] = WOOD[2]; }
+    }
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.color.needsUpdate = true;
+    geo.computeBoundingSphere();
+    slider.value = Math.round(load * 100);
+    sliderOut.textContent = `${Math.round(load * 100)}%`;
+    readout.textContent = `Peak stress ${(vmMaxMPa * load).toFixed(1)} MPa · max deflection ${(dmax * 1000 * load).toFixed(3)} mm`;
+  }
+
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.position.set(0, radius * 1.1, radius * 4.3 / Math.min(camera.aspect, 1.3));
+    camera.lookAt(0, -radius * 0.05, 0);
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---- interaction ----
+  let yaw = -0.6, pitch = 0.05, vyaw = 0, dragging = false, lastX = 0, lastY = 0, idle = 0, hover = null;
+  const canvas = renderer.domElement;
+  canvas.style.touchAction = 'pan-y';
+  canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); idle = 0; hover = e; });
+  canvas.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('pointercancel', () => { dragging = false; });
+
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), tri = new THREE.Triangle(), bary = new THREE.Vector3();
+  const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+  canvas.addEventListener('pointermove', (e) => {
+    if (dragging) {
+      vyaw = (e.clientX - lastX) * 0.008; yaw += vyaw;
+      pitch = Math.min(Math.max(pitch + (e.clientY - lastY) * 0.006, -0.6), 0.9);
+      lastX = e.clientX; lastY = e.clientY; idle = 0;
+    }
+    hover = e;
+  });
+  canvas.addEventListener('pointerleave', () => { hover = null; tip.hidden = true; marker.visible = false; });
+
+  function probe(e) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(mesh)[0];
+    if (!hit) { tip.hidden = true; marker.visible = false; return; }
+    const { a, b, c } = hit.face;
+    va.fromArray(pos, a * 3); vb.fromArray(pos, b * 3); vc.fromArray(pos, c * 3);
+    tri.set(va, vb, vc).getBarycoord(mesh.worldToLocal(hit.point.clone()), bary);
+    const s = (vm[a] * bary.x + vm[b] * bary.y + vm[c] * bary.z) * load;
+    tip.textContent = load > 0 ? `σ = ${s.toFixed(1)} MPa` : 'Add load to see stress';
+    tip.style.left = `${e.clientX - r.left}px`;
+    tip.style.top = `${e.clientY - r.top}px`;
+    tip.hidden = false;
+    marker.position.copy(mesh.worldToLocal(hit.point.clone())).add(mesh.position);
+    marker.visible = true;
+  }
+
+  // ---- load animation ----
+  let anim = null;
+  function play() {
+    anim = { t: 0 };
+    playBtn.classList.add('playing');
+  }
+  playBtn.addEventListener('click', () => { if (anim) { anim = null; playBtn.classList.remove('playing'); } else play(); });
+  slider.addEventListener('input', () => { anim = null; playBtn.classList.remove('playing'); load = slider.value / 100; applyLoad(); });
+  modeBtn.addEventListener('click', () => {
+    stressMode = !stressMode;
+    modeBtn.textContent = stressMode ? 'Plywood view' : 'Stress view';
+    modeBtn.setAttribute('aria-pressed', String(!stressMode));
+    box.classList.toggle('wood', !stressMode);
+    applyLoad();
+  });
+
+  let visible = true, autoplayed = false;
+  new IntersectionObserver(([en]) => {
+    visible = en.isIntersecting;
+    if (visible && !autoplayed && !reduceMotion) { autoplayed = true; play(); }
+  }, { threshold: 0.3 }).observe(box);
+  if (reduceMotion) { load = 1; }
+  applyLoad();
+
+  let last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min((now - last) / 1000, 0.05); last = now;
+    if (!visible) return;
+    if (anim) {
+      anim.t += dt / 2.6;
+      const t = Math.min(anim.t, 1);
+      load = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out
+      applyLoad();
+      if (anim.t >= 1) { anim = null; playBtn.classList.remove('playing'); }
+    }
+    idle += dt;
+    if (!dragging) {
+      yaw += vyaw; vyaw *= 0.92;
+      if (idle > 2.5 && !reduceMotion) yaw += dt * 0.25;
+    }
+    pivot.rotation.set(pitch, yaw, 0);
+    if (hover && !dragging) probe(hover);
     renderer.render(scene, camera);
   }
   requestAnimationFrame(frame);
