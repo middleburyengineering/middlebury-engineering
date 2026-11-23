@@ -581,3 +581,17 @@ a.person-link:hover .avatar { box-shadow: 0 0 0 4px var(--accent); }
 a.person-link:hover h4 { color: #d1531a; }
 .person .ext { font-size: .8em; color: #d1531a; }
 @media (max-width: 620px) { .avatar { width: 160px; height: 160px; } }
+
+/* ---------- Bridge page: FEA + load test ---------- */
+.fea-figure { margin: 0; }
+.fea-figure img { width: 100%; display: block; background: #fff; border-radius: 4px; padding: 10px; box-shadow: 22px 22px 0 -2px var(--accent); }
+.fea-figure figcaption, .test-photos + .caption {
+  font-family: var(--mono); font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-top: 30px;
+}
+.test-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 64px; }
+.test-photos img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 4px; display: block; }
+@media (max-width: 900px) {
+  .fea-figure img { box-shadow: 12px 12px 0 -2px var(--accent); }
+  .fea-figure figcaption { margin-top: 20px; }
+  .test-photos { margin-top: 40px; gap: 14px; }
+}
